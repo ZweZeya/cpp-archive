@@ -192,6 +192,6 @@ public:
     }
 };
 
-#include "weak_ptr.hpp"
-
 }
+
+#include "weak_ptr.hpp"

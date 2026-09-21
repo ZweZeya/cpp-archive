@@ -127,15 +127,4 @@ shared_ptr<T> make_shared(Args&&... args) {
     return shared_ptr<T>(ptr, block);
 }
 
-int main() {
-    shared_ptr<int> p1(new int(123));
-    weak_ptr<int> p2(p1);
-    shared_ptr<int> p3(p2);
-    p2.lock();
-
-    auto p4 = make_shared<int>(12);
-
-    return 0;
-}
-
 }

@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cstddef>
 #include <utility>
 #include <cstring>
@@ -21,13 +23,26 @@ private:
         for (std::size_t i = 0; i < size_ + 1; i++) {
             str_[i].~T();
         }
+
+        operator delete(str_);
+        str_ = new_str;
         capacity_ = new_capacity;
     }
 
-public:
-    basic_string() : str_(nullptr), size_(0), capacity_(0) {}
+    void init_empty_str() {
+        str_ = static_cast<T*>(operator new(sizeof(T)));
+        new(&str_[0]) T('\0');
+    }
 
-    basic_string(T* c_str) : size_(strlen(c_str)), capacity_(size_ + 1) {
+public:
+    basic_string() : size_(0), capacity_(1) {
+        str_ = static_cast<T*>(operator new(sizeof(T)));
+        new(&str_[0]) T('\0');
+    }
+
+    basic_string(const T* c_str) : size_(strlen(c_str)), capacity_(size_ + 1) {
+        if (c_str == nullptr) throw std::logic_error("string initialisation with null is not valid.");
+
         str_ = static_cast<T*>(operator new(sizeof(T) * capacity_));
         for (std::size_t i = 0; i < size_ + 1; i++) {
             new(&str_[i]) T(c_str[i]);
@@ -42,9 +57,9 @@ public:
     }
 
     basic_string(basic_string&& other) : str_(other.str_), size_(other.size_), capacity_(other.capacity_) {
-        other.str_ = nullptr;
         other.size_ = 0;
-        other.capacity_ = 0;
+        other.capacity_ = 1;
+        other.init_empty_str();
     }
 
     basic_string& operator=(const basic_string& other) {
@@ -83,9 +98,9 @@ public:
         size_ = other.size_;
         capacity_ = other.capacity_;
 
-        other.str_ = nullptr;
         other.size_ = 0;
-        other.capacity_ = 0;
+        other.capacity_ = 1;
+        other.init_empty_str();
 
         return *this;
     }

@@ -14,8 +14,6 @@ private:
     std::size_t capacity_;
     std::size_t size_;
 
-    void allocate_(std::size_t capacity);
-
     void clear_();
 
     void clear_and_delete_();
@@ -56,20 +54,6 @@ public:
 
     const T& operator[](std::size_t index) const;
 };
-
-template <typename T>
-void vector<T>::allocate_(std::size_t capacity) {
-    T* newData = static_cast<T*>(operator new(sizeof(T) * capacity));
-    for (std::size_t i = 0; i < size_; i++) {
-        new (&newData[i]) T(std::move(data_[i]));
-    }
-    capacity_ = capacity;
-    for (std::size_t i = 0; i < size_; i++) {
-        data_[i].~T();
-    }
-    operator delete(data_);
-    data_ = newData;
-}
 
 template<typename T>
 void vector<T>::clear_() {
@@ -153,18 +137,48 @@ vector<T>::~vector() {
 template <typename T>
 void vector<T>::push_back(const T& val) {
     if (size_ == capacity_) {
-        allocate_(capacity_ == 0 ? 1 : capacity_ << 1);
+        std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+        T* newData = static_cast<T*>(operator new(sizeof(T) * new_capacity));
+        new(&newData[size_]) T(val);
+
+        for (std::size_t i = 0; i < size_; i++) {
+            new (&newData[i]) T(std::move(data_[i]));
+        }
+        for (std::size_t i = 0; i < size_; i++) {
+            data_[i].~T();
+        }
+
+        capacity_ = new_capacity;
+        operator delete(data_);
+        data_ = newData;
+    } else {
+        new(&data_[size_]) T(val);
     }
-    new (&data_[size_]) T(val);
     size_++;
 }
 
 template <typename T>
 void vector<T>::push_back(T&& val) {
     if (size_ == capacity_) {
-        allocate_(capacity_ == 0 ? 1 : capacity_ << 1);
+        std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+        T* newData = static_cast<T*>(operator new(sizeof(T) * new_capacity));
+        new(&newData[size_]) T(std::move(val));
+
+        for (std::size_t i = 0; i < size_; i++) {
+            new (&newData[i]) T(std::move(data_[i]));
+        }
+        for (std::size_t i = 0; i < size_; i++) {
+            data_[i].~T();
+        }
+
+        capacity_ = new_capacity;
+        operator delete(data_);
+        data_ = newData;
+    } else {
+        new(&data_[size_]) T(std::move(val));
     }
-    new (&data_[size_]) T(std::move(val));
     size_++;
 }
 
@@ -172,16 +186,42 @@ template <typename T>
 template <typename... Args>
 void vector<T>::emplace_back(Args&&... args) {
     if (size_ == capacity_) {
-        allocate_(capacity_ == 0 ? 1 : capacity_ << 1);
+        std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+        T* newData = static_cast<T*>(operator new(sizeof(T) * new_capacity));
+        new(&newData[size_]) T(std::forward<Args>(args)...);
+
+        for (std::size_t i = 0; i < size_; i++) {
+            new (&newData[i]) T(std::move(data_[i]));
+        }
+        for (std::size_t i = 0; i < size_; i++) {
+            data_[i].~T();
+        }
+
+        capacity_ = new_capacity;
+        operator delete(data_);
+        data_ = newData;
+    } else {
+        new(&data_[size_]) T(std::forward<Args>(args)...);
     }
-    new(&data_[size_]) T(std::forward<Args>(args)...);
     size_++;
 }
 
 template <typename T>
 void vector<T>::reserve(std::size_t size) {
     if (size > capacity_) {
-        allocate_(size);
+        T* newData = static_cast<T*>(operator new(sizeof(T) * size));
+        
+        for (std::size_t i = 0; i < size_; i++) {
+            new (&newData[i]) T(std::move(data_[i]));
+        }
+        for (std::size_t i = 0; i < size_; i++) {
+            data_[i].~T();
+        }
+
+        capacity_ = size;
+        operator delete(data_);
+        data_ = newData;
     }
 }
 

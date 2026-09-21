@@ -14,19 +14,6 @@ private:
     std::size_t capacity_;
     std::size_t size_;
 
-    void expand_(std::size_t capacity) {
-        T* new_data = static_cast<T*>(allocator_.allocate(capacity));
-        for (std::size_t i = 0; i < size_; i++) {
-            new(&new_data[i]) T(std::move(data_[i]));
-        }
-        for (std::size_t i = 0; i < size_; i++) {
-            data_[i].~T();
-        }
-        allocator_.deallocate(data_, capacity_);
-        data_ = new_data;
-        capacity_ = capacity;
-    }
-
 public:
     vector2() : data_(nullptr), capacity_(0), size_(0) {}
 
@@ -95,30 +82,89 @@ public:
 
     void reserve(std::size_t size) {
         if (size > capacity_) {
-            expand_(size);
+            T* new_data = static_cast<T*>(allocator_.allocate(size));
+
+            for (std::size_t i = 0; i < size_; i++) {
+                new(&new_data[i]) T(std::move(data_[i]));
+            }
+            for (std::size_t i = 0; i < size_; i++) {
+                data_[i].~T();
+            }
+            
+            allocator_.deallocate(data_, capacity_);
+            capacity_ = size;
+            data_ = new_data;
         }
     }
 
     void push_back(const T& val) {
         if (size_ == capacity_) {
-            expand_(capacity_ == 0 ? 1 : capacity_ << 1);
+            std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+            T* new_data = static_cast<T*>(allocator_.allocate(new_capacity));
+            new (&new_data[size_]) T(val);
+
+            for (std::size_t i = 0; i < size_; i++) {
+                new(&new_data[i]) T(std::move(data_[i]));
+            }
+            for (std::size_t i = 0; i < size_; i++) {
+                data_[i].~T();
+            }
+            
+            allocator_.deallocate(data_, capacity_);
+            capacity_ = new_capacity;
+            data_ = new_data;
+        } else {
+            new (&data_[size_]) T(val);
         }
-        new (&data_[size_++]) T(val);
+        size_++;
     }
 
     void push_back(T&& val) {
         if (size_ == capacity_) {
-            expand_(capacity_ == 0 ? 1 : capacity_ << 1);
+            std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+            T* new_data = static_cast<T*>(allocator_.allocate(new_capacity));
+            new(&new_data[size_]) T(std::move(val));
+
+            for (std::size_t i = 0; i < size_; i++) {
+                new(&new_data[i]) T(std::move(data_[i]));
+            }
+            for (std::size_t i = 0; i < size_; i++) {
+                data_[i].~T();
+            }
+            
+            allocator_.deallocate(data_, capacity_);
+            capacity_ = new_capacity;
+            data_ = new_data;
+        } else {
+            new(&data_[size_]) T(std::move(val));
         }
-        new(&data_[size_++]) T(std::move(val));
+        size_++;
     }
 
     template <typename... Args>
     void emplace_back(Args&&... args) {
         if (size_ == capacity_) {
-            expand_(capacity_ == 0 ? 1 : capacity_ << 1);
+            std::size_t new_capacity = capacity_ == 0 ? 1 : capacity_ << 1;
+
+            T* new_data = static_cast<T*>(allocator_.allocate(new_capacity));
+            new(&new_data[size_]) T(std::forward<Args>(args)...);
+
+            for (std::size_t i = 0; i < size_; i++) {
+                new(&new_data[i]) T(std::move(data_[i]));
+            }
+            for (std::size_t i = 0; i < size_; i++) {
+                data_[i].~T();
+            }
+            
+            allocator_.deallocate(data_, capacity_);
+            capacity_ = new_capacity;
+            data_ = new_data;
+        } else {
+            new(&data_[size_]) T(std::forward<Args>(args)...);
         }
-        new(&data_[size_++]) T(std::forward<Args>(args)...);
+        size_++;
     }
 
     void pop_back() {
@@ -127,9 +173,11 @@ public:
         data_[size_].~T();
     }
 
-    std::size_t size() const { return size_; }
+    std::size_t size() const noexcept{ return size_; }
 
-    bool empty() const { return size_ == 0; }
+    bool empty() const noexcept { return size_ == 0; }
+
+    std::size_t capacity() const noexcept { return capacity_; }
 
     T& operator[](std::size_t index) { return data_[index]; }
 
