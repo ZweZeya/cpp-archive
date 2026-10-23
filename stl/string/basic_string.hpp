@@ -1,162 +1,278 @@
 #pragma once
 
 #include <cstddef>
-#include <utility>
-#include <cstring>
-#include <iostream>
 #include <stdexcept>
+#include <iterator>
+#include <iostream>
+#include <string>
+#include <algorithm>
 
 namespace my_std {
 
-template <typename T>
+template <typename CharT, typename Traits = std::char_traits<CharT>>
 class basic_string {
+public:
+    using value_type = CharT;
+    using reference = value_type&;
+    using const_reference = const value_type&;
+    using iterator = CharT*;
+    using const_iterator = const CharT*;
+    using reverse_iterator = std::reverse_iterator<iterator>;
+    using const_reverse_iterator = std::reverse_iterator<const_iterator>;
+
 private:
-    T* str_;
+    static constexpr std::size_t INLINE_BUFFER_SIZE = 16;
+
     std::size_t size_;
-    std::size_t capacity_;
+    CharT* ptr_;
 
-    void expand(std::size_t new_capacity) {
-        T* new_str = static_cast<T*>(operator new(sizeof(T) * new_capacity));
-        for (std::size_t i = 0; i < size_ + 1; i++) {
-            new(&new_str[i]) T(std::move(str_[i]));
-        }
-        for (std::size_t i = 0; i < size_ + 1; i++) {
-            str_[i].~T();
-        }
+    union {
+        std::size_t capacity_;
+        CharT buffer_[INLINE_BUFFER_SIZE];
+    };
 
-        operator delete(str_);
-        str_ = new_str;
-        capacity_ = new_capacity;
+    CharT* allocate(std::size_t n) {
+        return static_cast<CharT*>(operator new(sizeof(CharT) * n));
     }
 
-    void init_empty_str() {
-        str_ = static_cast<T*>(operator new(sizeof(T)));
-        new(&str_[0]) T('\0');
-    }
+    bool is_local() const noexcept { return ptr_ == buffer_; }
 
 public:
-    basic_string() : size_(0), capacity_(1) {
-        str_ = static_cast<T*>(operator new(sizeof(T)));
-        new(&str_[0]) T('\0');
+    basic_string() noexcept : size_(0), ptr_(buffer_) {
+        buffer_[0] = '\0';
     }
 
-    basic_string(const T* c_str) : size_(strlen(c_str)), capacity_(size_ + 1) {
-        if (c_str == nullptr) throw std::logic_error("string initialisation with null is not valid.");
-
-        str_ = static_cast<T*>(operator new(sizeof(T) * capacity_));
-        for (std::size_t i = 0; i < size_ + 1; i++) {
-            new(&str_[i]) T(c_str[i]);
+    basic_string(const CharT* s) : size_(Traits::length(s)) {
+        if (size_ < INLINE_BUFFER_SIZE) {
+            ptr_ = buffer_;
+        } else {
+            ptr_ = allocate(size_ + 1);
+            capacity_ = size_;
         }
+        Traits::copy(ptr_, s, size_ + 1);
     }
 
-    basic_string(const basic_string& other) : size_(other.size_), capacity_(other.capacity_) {
-        str_ = static_cast<T*>(operator new(sizeof(T) * capacity_));
-        for (std::size_t i = 0; i < size_ + 1; i++) {
-            new(&str_[i]) T(std::move(other.str_[i]));
+    basic_string(const basic_string& other) : size_(other.size_) {
+        if (size_ < INLINE_BUFFER_SIZE) {
+            ptr_ = buffer_;
+        } else {
+            capacity_ = other.capacity_;
+            ptr_ = allocate(capacity_ + 1);
         }
+        Traits::copy(ptr_, other.ptr_, size_ + 1);
     }
 
-    basic_string(basic_string&& other) : str_(other.str_), size_(other.size_), capacity_(other.capacity_) {
+    basic_string(basic_string&& other) noexcept : size_(other.size_) {
+        if (other.is_local()) {
+            ptr_ = buffer_;
+            Traits::copy(ptr_, other.ptr_, size_ + 1);
+        } else {
+            ptr_ = other.ptr_;
+            capacity_ = other.capacity_;
+        }
         other.size_ = 0;
-        other.capacity_ = 1;
-        other.init_empty_str();
+        other.buffer_[0] = '\0';
+        other.ptr_ = other.buffer_;
     }
 
     basic_string& operator=(const basic_string& other) {
         if (this == &other) return *this;
 
-        if (str_ != nullptr) {
-            for (std::size_t i = 0; i < size_; i++) {
-                str_[i].~T();
-            }
-            operator delete(str_);
-        }
-        
-        size_ = other.size_;
-        capacity_ = other.capacity_;
-        str_ = static_cast<T*>(operator new(sizeof(T) * capacity_));
+        std::size_t new_size = other.size_;
+        CharT* new_ptr;
+        bool is_prev_heap = !is_local();
+        CharT* old_ptr = ptr_;
 
-        for (std::size_t i = 0; i < size_; i++) {
-            new(&str_[i]) T(other.str_[i]);
+        if (new_size < INLINE_BUFFER_SIZE) {
+            new_ptr = buffer_;
+        } else {
+            new_ptr = allocate(new_size + 1);
+            capacity_ = new_size;
         }
-        new(&str_[size_]) T('\0');
+
+        Traits::copy(new_ptr, other.ptr_, new_size + 1);
+
+        size_ = new_size;
+        ptr_ = new_ptr;
+
+        if (is_prev_heap)
+            operator delete(old_ptr);
 
         return *this;
     }
 
-    basic_string& operator=(basic_string&& other) {
+    basic_string& operator=(basic_string&& other) noexcept {
         if (this == &other) return *this;
 
-        if (str_ != nullptr) {
-            for (std::size_t i = 0; i < size_; i++) {
-                str_[i].~T();
-            }
-            operator delete(str_);
+        CharT* new_ptr;
+        bool is_prev_heap = !is_local();
+        CharT* old_ptr = ptr_;
+
+        if (other.is_local()) {
+            new_ptr = buffer_;
+            Traits::copy(new_ptr, other.ptr_, other.size_ + 1);
+        } else {
+            new_ptr = other.ptr_;
+            capacity_ = other.capacity_;
         }
-        
-        str_ = other.str_;
+
         size_ = other.size_;
-        capacity_ = other.capacity_;
+        ptr_ = new_ptr;
 
         other.size_ = 0;
-        other.capacity_ = 1;
-        other.init_empty_str();
+        other.buffer_[0] = '\0';
+        other.ptr_ = other.buffer_;
+
+        if (is_prev_heap)
+            operator delete(old_ptr);
 
         return *this;
     }
 
     ~basic_string() {
-        if (str_ != nullptr) {
-            for (std::size_t i = 0; i < size_; i++) {
-                str_[i].~T();
-            }
-            operator delete(str_);
-        }
+        if (!is_local())
+            operator delete(ptr_);
     }
 
-    void push_back(const T& c) {
-        if (size_ + 1 >= capacity_) {
-            expand(capacity_ == 0 ? size_ + 2 : capacity_ << 1);
+    reference at(std::size_t index) {
+        if (index >= size_) 
+            throw std::out_of_range("Index is out of range");
+        return ptr_[index];
+    }
+
+    const_reference at(std::size_t index) const {
+        if (index >= size_) 
+            throw std::out_of_range("Index is out of range");
+        return ptr_[index];
+    }
+
+    reference operator[](std::size_t index) { return ptr_[index]; }
+
+    const_reference operator[](std::size_t index) const { return ptr_[index]; }
+
+    reference front() { return ptr_[0]; }
+
+    const_reference front() const { return ptr_[0]; }
+
+    reference back() { return ptr_[size_ - 1]; }
+
+    const_reference back() const { return ptr_[size_ - 1]; }
+
+    const CharT* data() const { return ptr_; }
+
+    const CharT* c_str() const { return ptr_; }
+
+    iterator begin() { return ptr_; }
+
+    iterator end() { return ptr_ + size_; }
+
+    const_iterator cbegin() { return ptr_; }
+
+    const_iterator cend() { return ptr_ + size_; }
+
+    reverse_iterator rbegin() { return reverse_iterator(end()); }
+
+    reverse_iterator rend() { return reverse_iterator(begin()); }
+
+    const_reverse_iterator crbegin() { return const_reverse_iterator(cend()); }
+
+    const_reverse_iterator crend() { return const_reverse_iterator(cbegin()); }
+
+    bool empty() const noexcept { return size_ == 0; }
+
+    std::size_t size() const noexcept { return size_; }
+
+    void reserve(std::size_t n) {
+        if (n < INLINE_BUFFER_SIZE) return;
+
+        if (!is_local() && n <= capacity_) return;
+
+        CharT* new_ptr = allocate(n + 1);
+        Traits::copy(new_ptr, ptr_, size_ + 1);
+
+        bool is_prev_heap = !is_local();
+        CharT* old_ptr = ptr_;
+        ptr_ = new_ptr;
+        capacity_ = n;
+
+        if (is_prev_heap)
+            operator delete(old_ptr);
+    }
+
+    std::size_t length() const noexcept { return size_; }
+
+    std::size_t capacity() const noexcept { 
+        return is_local() ? INLINE_BUFFER_SIZE - 1 : capacity_; 
+    }
+
+    void clear() {
+        ptr_[0] = '\0';
+        size_ = 0;
+    }
+
+    void push_back(CharT ch) {
+        std::size_t current_capacity = capacity();
+        if (size_ == current_capacity) {
+            std::size_t new_capacity = current_capacity << 1;
+            reserve(new_capacity);
         }
-        new(&str_[size_ + 1]) T(std::move(str_[size_]));
-        new(&str_[size_]) T(c);
+        
+        ptr_[size_] = ch;
         size_++;
+        ptr_[size_] = '\0';
     }
 
-    void push_back(T&& c) {
-        if (size_ + 1 >= capacity_) {
-            expand(capacity_ == 0 ? size_ + 2 : capacity_ << 1);
+    basic_string& operator+=(CharT ch) {
+        push_back(ch);
+        return *this;
+    }
+
+    basic_string& operator+=(const CharT* s) {
+        return append(s, Traits::length(s));
+    }
+
+    basic_string& operator+=(const basic_string& s) {
+        return append(s.ptr_, s.size_);
+    }
+
+    basic_string& append(const CharT* s, std::size_t count) {
+        std::size_t new_size = size_ + count;
+
+        if (new_size <= capacity()) {
+            Traits::copy(ptr_ + size_, s, count);
+            size_ = new_size;
+            ptr_[size_] = '\0';
+            return *this;
         }
-        new(&str_[size_ + 1]) T(std::move(str_[size_]));
-        new(&str_[size_]) T(std::move(c));
-        size_++;
+
+        std::size_t new_capacity = new_size << 1;
+
+        CharT* new_ptr = allocate(new_capacity + 1);
+        Traits::copy(new_ptr , ptr_, size_);
+        Traits::copy(new_ptr + size_, s, count);
+
+        bool is_prev_heap = !is_local();
+        CharT* old_ptr = ptr_;
+        ptr_ = new_ptr;
+        size_ = new_size;
+        capacity_ = new_capacity;
+        ptr_[size_] = '\0';
+
+        if (is_prev_heap)
+            operator delete(old_ptr);
+        return *this;
     }
 
-    void pop_back() {
-        if (size_ == 0) throw std::runtime_error("string is empty");
-        str_[size_ - 1] = std::move(str_[size_]);
-        str_[size_].~T();
-        size_--;
+    bool operator==(const basic_string& other) const {
+        return size_ == other.size_
+            ? Traits::compare(ptr_, other.ptr_, size_ + 1) == 0
+            : false;
     }
 
-    std::size_t size() const { return size_; }
-
-    std::size_t length() const { return size_; }
-
-    bool empty() const { return size_ == 0; }
-
-    T& operator[](std::size_t index) { return str_[index]; }
-
-    const T& operator[](std::size_t index) const { return str_[index]; }
-
-    const T* c_str() const { return str_; }
-
-    friend std::ostream& operator<<(std::ostream& os, const basic_string& str) {
-        os << str.str_;
+    friend std::basic_ostream<CharT, Traits>& operator<<(std::basic_ostream<CharT, Traits>& os, const basic_string& s) {
+        os << s.c_str();
         return os;
     }
 };
-
-using string = basic_string<char>;
 
 }

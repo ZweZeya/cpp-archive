@@ -7,6 +7,9 @@ build/
 *.o
 *.out
 
+# Order book benchmark/test output (written by misc/orderbook/run.sh)
+misc/orderbook/results/
+
 # macOS
 .DS_Store
 

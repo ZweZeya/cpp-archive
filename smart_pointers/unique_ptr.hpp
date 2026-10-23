@@ -1,59 +1,97 @@
 #pragma once
 
+#include <memory>
+#include <type_traits>
+#include <cstddef>
+
 namespace my_std {
 
-template <typename T>
+template <typename T, typename Deleter = std::default_delete<T>>
 class unique_ptr {
+public:
+    using pointer = T*;
+
 private:
-    T* ptr_;
+    pointer ptr_;
+    [[no_unique_address]] Deleter deleter_{};
 
 public:
-    unique_ptr() : ptr_(nullptr) {}
+    unique_ptr() noexcept requires (!std::is_pointer_v<Deleter>) : ptr_(nullptr) {}
 
-    explicit unique_ptr(T* ptr) : ptr_(ptr) {}
+    unique_ptr(std::nullptr_t) noexcept requires (!std::is_pointer_v<Deleter>) : ptr_(nullptr) {}
 
-    unique_ptr(const unique_ptr& other) = delete;
+    explicit unique_ptr(pointer ptr) noexcept requires (!std::is_pointer_v<Deleter>) : ptr_(ptr) {}
 
-    unique_ptr(unique_ptr&& other) noexcept : ptr_(other.ptr_) {
+    unique_ptr(pointer ptr, const Deleter& deleter) : ptr_(ptr), deleter_(deleter) {}
+
+    unique_ptr(pointer ptr, Deleter&& deleter) : ptr_(ptr), deleter_(std::move(deleter)) {}
+
+    unique_ptr(const unique_ptr&) = delete;
+
+    unique_ptr(unique_ptr&& other) noexcept : ptr_(other.ptr_), deleter_(std::move(other.deleter_)) {
         other.ptr_ = nullptr;
     }
 
-    unique_ptr& operator=(const unique_ptr& other) = delete;
+    template <typename U, typename E>
+    requires std::is_convertible_v<U*, pointer> && std::is_convertible_v<E, Deleter>
+    unique_ptr(unique_ptr<U, E>&& other) noexcept : ptr_(other.release()), deleter_(std::move(other.get_deleter())) {}
+
+    ~unique_ptr() {
+        if (ptr_ != nullptr) deleter_(ptr_);
+    }
+
+    unique_ptr& operator=(const unique_ptr&) = delete;
 
     unique_ptr& operator=(unique_ptr&& other) noexcept {
         if (this == &other) return *this;
-
-        delete ptr_;
-
-        ptr_ = other.ptr_;
-        other.ptr_ = nullptr;
+        
+        pointer tmp = other.release();
+        reset(tmp);
+        deleter_ = std::move(other.deleter_);
 
         return *this;
     }
 
-    ~unique_ptr() {
-        delete ptr_;
+    template <typename U, typename E>
+    requires std::is_convertible_v<U*, pointer> && std::is_assignable_v<Deleter&, E&&>
+    unique_ptr& operator=(unique_ptr<U, E>&& other) noexcept {
+        pointer tmp = other.release();
+        reset(tmp);
+        deleter_ = std::move(other.get_deleter());
+
+        return *this;
     }
 
-    T* get() const noexcept { return ptr_; }
+    unique_ptr& operator=(std::nullptr_t) noexcept {
+        reset();
+        return *this;
+    }
 
-    T& operator*() noexcept { return *ptr_; }
+    pointer release() noexcept {
+        pointer result = ptr_;
+        ptr_ = nullptr;
+        return result;
+    }
 
-    T* operator->() const noexcept { return ptr_; }
+    void reset(pointer ptr = nullptr) noexcept {
+        pointer old_ptr = ptr_;
+        ptr_ = ptr;
+
+        if (old_ptr != nullptr) deleter_(old_ptr);
+    }
 
     explicit operator bool() const noexcept { return ptr_ != nullptr; }
 
-    T* release() noexcept {
-        T* res = ptr_;
-        ptr_ = nullptr;
-        return res;
-    }
+    pointer get() const noexcept { return ptr_; }
 
-    void reset(T* ptr = nullptr) {
-        T* old_ptr = ptr_;
-        ptr_ = ptr;
-        delete old_ptr;
-    }
+    Deleter& get_deleter() noexcept { return deleter_; }
+
+    const Deleter& get_deleter() const noexcept { return deleter_; }
+
+    T& operator*() const noexcept { return *ptr_; }
+
+    pointer operator->() const noexcept { return ptr_; }
+
 };
 
 }
