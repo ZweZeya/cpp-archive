@@ -191,12 +191,8 @@ public:
         destroy(old_data, size_);
     }
 
-    void push_back(const T& value) {
-        emplace_back(value);
-    }
-
     void push_back(T&& value) {
-        emplace_back(std::move(value));
+        emplace_back(std::forward<T>(value));
     }
 
     template <typename... Args>

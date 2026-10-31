@@ -1,0 +1,13 @@
+#pragma once
+
+namespace my_std {
+    
+struct defer_lock_t {};
+struct try_to_lock_t {};
+struct adopt_lock_t {};
+
+inline constexpr defer_lock_t defer_lock{}; 
+inline constexpr try_to_lock_t try_to_lock{}; 
+inline constexpr adopt_lock_t adopt_lock{};
+
+}
